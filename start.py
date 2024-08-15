@@ -37,6 +37,7 @@ def loop():
             print('Something is connected')
             vendor_name = sp.getoutput('grep . /sys/bus/firewire/devices/fw1/vendor_name')
             filename = vendor_name + ' ' + model_name + '-'
+            capture.run(filename)
         else:
             print('Nothing connected')
             #capture.run()
