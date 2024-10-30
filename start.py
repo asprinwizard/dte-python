@@ -1,88 +1,59 @@
 #!/usr/bin/env python3
 
-import os
-import subprocess as sp
-from pathlib import Path
+import multiprocessing
 import time
-import capture
-import atexit
+from gpiozero import Button
+from capture import Capture
+from display import Display  # Import the Display class
 
-data_path = str(Path.joinpath(Path.home(), ".dte"))
-log_path = str(Path().absolute()) + '/log.py'
-device = data_path + '/device'
-vendor_name = ''
-model_name = ''
-log_process = False
+def run_capture(capture):
+    capture.monitor_device()
 
-def setup():
-    # Run cleanup
-    cleanup()
+def switch_to_mode(mode):
+    global current_mode, mode1_process, capture_instance
+    print(f"Switching to mode {mode}")
+    current_mode = mode
+    if mode == 2 and mode1_process:
+        print("Terminating Mode 1 processes")
+        mode1_process.terminate()
+        mode1_process.join()
 
-    # Start logging
-    start_logging()
+def restart_mode1():
+    global mode1_process, capture_instance, display
+    if mode1_process.is_alive():
+        mode1_process.terminate()
+        mode1_process.join()
+    capture_instance = Capture(display)  # Pass the display instance
+    mode1_process = multiprocessing.Process(target=run_capture, args=(capture_instance,))
+    mode1_process.start()
 
-    # Pause briefly to allow files to be created
-    time.sleep(0.2)
+def on_encoder_click():
+    if current_mode == 1:
+        switch_to_mode(2)
+    elif current_mode == 2:
+        switch_to_mode(1)
 
-    # Reset the device
-    reset_device()
+# Setup encoder button on GPIO pin
+encoder_button = Button(17)  # Adjust GPIO pin as needed
+encoder_button.when_pressed = on_encoder_click
 
-def loop():
-    global filename
-    global model_name
-    global vendor_name
-    while True:
-        device_detect()
-        if model_name:
-            print('Something is connected')
-            vendor_name = sp.getoutput('grep . /sys/bus/firewire/devices/fw1/vendor_name')
-            filename = vendor_name + ' ' + model_name + '-'
-            capture.run(filename)
-        else:
-            print('Nothing connected')
-            #capture.run()
-        time.sleep(2)
+if __name__ == "__main__":
+    current_mode = 1
+    #display = Display()  # Instantiate the Display class
+    #capture_instance = Capture(display)  # Pass Display to Capture
+    capture_instance = Capture()  # Pass Display to Capture
+    mode1_process = multiprocessing.Process(target=run_capture, args=(capture_instance,))
+    mode1_process.start()
 
-def cleanup():
-    global log_process
-    if log_process:
-        status = sp.Popen.poll(log_process)
-        if not status:
-            sp.Popen.terminate(log_process)
-            status = sp.Popen.poll(log_process)
-    log_process = False
-    
-
-def exit_handler():
-    cleanup()
-
-def start_logging():
-    global log_process
-    log_process = sp.Popen(['python3', log_path])
-
-def device_detect():
-    model_name = sp.getoutput('grep . /sys/bus/firewire/devices/fw1/model_name')
-    if not model_name:
-        print("Waiting for camera")
-    elif model_name == 'grep: /sys/bus/firewire/devices/fw1/model_name: No such file or directory':
-        print("No firewire driver connected")
-    else:
-        f = open(device, 'w')
-        f.write(model_name)
-        f.close()
-
-def reset_device():
-    global model_name
-    global vendor_name
-    model_name = ''
-    vendor_name = ''
-    f = open(device, 'w')
-    f.write('')
-    f.close()
-
-# Register handlers
-atexit.register(exit_handler)
-
-# Finally run the methods
-setup()
-loop()
+    try:
+        while True:
+            if current_mode == 1 and capture_instance.device_disconnected:
+                print("Device disconnected, restarting Mode 1...")
+                restart_mode1()
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("Exiting...")
+    finally:
+        if mode1_process.is_alive():
+            mode1_process.terminate()
+            mode1_process.join()
