@@ -4,8 +4,6 @@ import subprocess
 import time
 from pathlib import Path
 
-
-
 class Capture:
     
     #def __init__(self, display):
@@ -34,12 +32,14 @@ class Capture:
     def start_dvgrab(self):
         #self.display.show_message("Device connected - Starting dvgrab")
         #log_file_path = "/path_to_logs/output.log"  # Path to the log file
+        file_name = 'dte-capture-'
+        file_path = self.capture_path + '/' + file_name
 
         # Open the log file and start dvgrab, redirecting stderr to the log file
         with open(self.log_file_path, "a") as log_file:
             self.dvgrab_process = subprocess.Popen(
-                ['dvgrab', '--buffers', '10', '--recordonly', '--autosplit', '--interactive',
-                 '/path_to_capture_dir/filename.dv'],
+                ['dvgrab', '--buffers', '10', '--recordonly', '--autosplit', '--interactive', # need to sort this list by merging arrays
+                 file_path],
                 stdout=subprocess.PIPE,
                 stderr=log_file
             )
