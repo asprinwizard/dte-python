@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
-import dte_display
+from dte_display import Display
 
-dte_display.test()
+display = Display()
+
+display.test()
