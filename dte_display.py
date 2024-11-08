@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from display.lcd1602 import template01 as template
+from display.lcd1602_IC2 import template01 as template
 
 #display = template.lcd()
 
