@@ -2,9 +2,11 @@
 
 import multiprocessing
 import time
+import config
 from gpiozero import Button
 from capture import Capture
 from display import Display  # Import the Display class
+
 
 def run_capture(capture):
     capture.monitor_device()
