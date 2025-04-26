@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from display.lcd1602.lcd_display import LCD_Display_01 as DisplayDevice
+
+from display.lcd1602_IC2.lcd_display import LCD_Display_Rec_01 as DisplayDevice
 import time
 
 #display = template.lcd()
