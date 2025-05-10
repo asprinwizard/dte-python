@@ -1,2 +1,2 @@
-lcd_brightness=4
-lcd_contrast=5
+lcd_brightness=8
+lcd_contrast=8

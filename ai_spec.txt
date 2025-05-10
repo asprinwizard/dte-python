@@ -1,0 +1,171 @@
+This project is the software for a DTE video recorder. A DTE recorder is a device for recording DV or HDV video via IEEE 1394 Firewire. The hardware for this project consists of the following:
+
+- A Raspberry Pi CM4 (running Raspberry Pi OS Lite)
+- Host board for RPI CM4 with PCIe interface
+- A Firewire PCIe interface board
+- A LCD1602 LCD display (not IC2)
+- A rotary encoder
+- A mosfets for handling the setting of LCD brightness using GPIO and a resistor as a voltage splitters for contrast from GPIO
+
+When the pi boots up the ./start.py from this project is run. What I want is to rebuild this project and rewrite start.py to build the whole DTE system (with a few exceptions) so it will run as a standalone DTE recorder.
+
+Default/Capture mode:
+When the start.py is run it goes into capture mode by default. This is for recording from a connected camcorder.
+The first stage is to detect the device is connected. It should continually monitor the fireware ports for a connected device. 
+Once one is found it should extract the vendor and model of the connected device, this will be passed as the filename prefex for all recorded files.
+It should then start the capture process described below. When a device is removed it should end any ongoing captures safely and reset any device names and then start polling once again for devices. So we need a process to continually monitor the selected device.
+
+Edge cases: 
+If two devices are connected via firewire it will only be concerned with the first one. If that is removed it will start polling and find the second one and start the capture for that device.
+In the event that a firewire device is missing a vendor and model name use the fallback filename `dte-capture`
+
+Capture
+To capture DV and HDV recordings we are using a custom fork of the dvgrab project. This binary is in the root of this project.
+This should be started once a device is detected and writes output such as recording status and timecode to stderr. 
+We need to handle this output since we will be writing this info to the LCD screen. For example the current dvgrab command is:
+`dvgrab --buffers 10 --recordonly --autosplit --interactive {filename-}`
+
+It may be worth running dvgrab in the background since we need to operate the rotary encoder and update the lcd display during recording.
+
+Storage:
+There are 3 storage options:
+- Internal
+- USB
+- SD Card
+
+They have the priority SD, USB then internal. Internal is the fallback if none of the others are connected. 
+I will leave SD for now as I don't have the spec for the hardware yet, so let's build for USB and Internal and leave space to handle SD when appropriate.
+The capture directory is called `Videos` and sits in the root of the USB and SD cards, needs to be created if it doesn't exist. 
+For internal recording the Videos folder is in the home directory of the logged in user `dte`, i.e. ~/Videos
+We need to continually poll the storage locations and if they change, stop any captures immediately and then reset the storage location immediately based on the priority. 
+E.g. if a USB device is connected and then removed the system needs to reset to use the internal storage, and if it is then plugged back in it will set the storage to USB.
+The selected storage is displayed by an icon on the LCD so we need to ensure that updates as storage options change.
+
+Display:
+The layout of the default display template for a LCD1602 display is described below:
+Format below is row:column
+1:1 to 1:3 - Format of video. Either DV OR HDV
+1:5 to 1:13 - Device name - this will be trucated in some cases. E.g. `Sony HVR-A1E` would be `Sony HVR-`
+1:15 - Storage, Custom Character to display SD Card, USB or internal
+1:16 - Battery indicator - for now display custom character for a full battery
+2:1 - Status icon - custom character: filled circle for record and two vertical lines for pause/standby
+2:2 to 2:7 - Record status: REC or STBY
+2:9 to 2:16 - timecode in format HH:MM:SS (no need to show frames, not enough room anyway)
+When no device is connected it should just display `No Device Connected` and when device or storage is unplugged it should display `Please Wait` while the system handles the changes and resets itself.
+
+Note: the timecode is passed from dvgrab to stderr and can be grabbed from here. My plan is to use a custom fork of dvgrab which will output a JSON string something like:
+{ status: 'REC', timecode: '00:45:12' } to stderr and this can then be decoded and put on row 2 of the LCD
+Note: there is already a class for Custom Characters so we can use that or a variant of it to create icons for record, pause, battery and storage.
+
+For playback mode the display template should be as follows:
+1:1 to 1:13 - File name
+1:15 - Storage, Custom Character to display SD Card, USB or internal
+1:16 - Battery indicator - for now display custom character for a full battery
+2:1 - Status icon - custom character: forward arrow for play and two vertical lines for pause/standby
+2:2 to 2:7 - Playback status: PLAY or PAUSE
+2:9 to 2:16 - timecode in format HH:MM:SS (no need to show frames, not enough room anyway)
+
+In the file list of playback mode row 1 should display the text `Select File:` and row 2 should display the selected filename which will adjust as you turn the rotary encoder
+
+Rotary Encoder:
+Controlling the DTE recorder is done via a rotary encoder connected to the GPIO pins of the Raspberry Pi.
+The capture process is handled by dvgrab and the connected device. In other words it is the camera that starts and stops the recording so the rotary encoder is only needed for the playback and settings mode.
+Clicking the rotary encoder button will take the device into playback mode. Clicking and holding the rotary encoder button for 2 seconds will activate the settings mode.
+
+Note: if the device is recording the button should not do anything, you can only activate playback and settings mode when the device is waiting for a device connection or when in STBY record status
+
+Note: if the device is in playback or config settings mode and the rotary encoder is not activated for 15 seconds the device should revert to default/capture mode
+
+Playback Mode:
+The idea here is to list all the files on the selected storage and enable navigation up or down the list using the rotary encoder. 
+Selecting a file will activate playback but as yet I have not decided if that will be via fullscreen hdmi playback of the Raspberry Pi, or via firewire to the attached camera.
+So for now we will just show the playback display screen as described above.
+Pressing the rotary encoder button during playback will pause the playback
+Pressing the rotary encoder button for 2 seconds stops playback and goes back to the playback list
+From the playback list screen clicking the rotary encoder button for 2 seconds exits back to the default/capture mode
+
+Display Settings:
+The brightness and contrast of the display will br set by config values (see config section below). 
+When it starts the lcd display should read the values for `lcd_brightness` and `lcd_contrast` and set the values of the PWM GPIOs 12 and 13 (brightness and contrast) accordingly.
+The config values are out of 16 so the default values (8) would equal 50% on the pins.
+
+Config Settings:
+The config.txt file in the root of the project stores the default (factory) settings for the device.
+This is a simple text config value in the format: key=value (per line)
+The settings the system uses are stored in ~/.dte/config. If this file does not exist on startup it should be created from the config.txt file.
+Upon boot the contents of ~/.dte/config are read and loaded as a global array when start.py runs.
+The values therefore need to be available to any python script running as part of the application.
+To access the settings menu you click and hold the rotary encoder button for 2 seconds when the device is in default/capture mode and not recording.
+At present there are only two settings: `lcd_brightness` and `lcd_contrast` for adjusting the brightness and contrast of the display.
+Selecting either of these from the menu will show you take you to a screen for adjusting these values. 
+This screen will vary depending on the setting in future but for lcd_brightness and lcd_contrast it will looks as follows:
+Display line 1: Name of setting
+Display line 2: Value of setting
+
+Display line 2 will show the value in solid block characters. So by default is 8/16 and will show as the first 8 characters as filled blocks, the second 8 characters will be empty.
+The rotary encoder can then be scrolled left or right to adjust the value accordingly and the display should represent this.
+The config update is live so as you scroll to a new value it will update the value in the ~/.dte/config file
+The rotary encoder click returns the user to the main config settings menu, i.e. the root menu
+If the rotary click is clicked and held for 2 seconds the device returns to defult/capture mode
+
+Note: As mentioned above settings will use different display templates so please cater for this in the code.
+
+The menu structure for the config/settings mode is as follows:
+LCD brightness
+LCD contrast
+Factory Reset
+
+Suggest an array should look something like this:
+[
+    [
+        'label' => 'LCD Brightness',
+        'key' => 'lcd_brightness',
+        'template' => 'range'
+    ],
+    [
+        'label' => 'LCD Contrast',
+        'key' => 'lcd_contrast',
+        'template' => 'range'
+    ],
+    [
+        'label' => 'Factory Reset',
+        'template' => 'confirm',
+    ]
+]
+
+The templates are the page layouts for the settings. The `range` template is the one described above for lcd_brightness and lcd_contrast.
+The `confirm` template is a simple confirmation so the user doesn't press it by mistake.
+The display for the confirm template is like this:
+Display Line 1: Are you sure?
+Display Line 2: No
+
+The rotary encoder can toggle the value on the second line from No to Yes. 
+The default is not so as to avoid any user double click errors.
+A single click to will activate the action: No = return to previous menu, Yes  = reset the device (described below)
+
+Note: in the two template examples shown the calls to action are different, the range template performs the action on the rotary encoder scroll/toggle action,
+whereas the confirm template does the action upon click. Therefore we need some listeners setup so we can cater for performing different actions on different events.
+The events would be something like: scrollLeft, scrollRight, click, longClick (2 seconds)
+Anything that adjusts values in ~/.dte/config will likely be triggered on the scrollLeft and scrollRight, but others such as reset (below), and in future perhaps `formatDisk` will apply a confirmation and then do the action on the click event.
+ 
+Reset device: 
+This is a simple process. The application deletes the ~/.dte/config file and reboots the Raspberry Pi.
+This will reset all settings as the system will look for the ~/.dte/config file it will not be there so it will setup a new one based on config.txt, as described previously.
+
+Battery:
+This will come later. The device will be battery powered but the hardware for this is currently undecided. 
+We will need a script to monitor the battery usage but for now we can use a placeholder and display a full battery icon on the LCD as described above.
+
+GPIO setup:
+The GPIO setup is as follows:
+GPIO12 (Pin 32): PWM lcd_brightness 
+GPIO13 (Pin 33): PWN lcd_contrast
+GPIO4 (Pin 7): LCD RS (Pin 4) 
+GPIO17 (Pin 11): LCD EN (Pin 6) 
+GPIO22 (Pin 15): LCD D4 (Pin 11) 
+GPIO23 (Pin 16): LCD D5 (Pin 12) 
+GPIO24 (Pin 18): LCD D6 (Pin 13) 
+GPIO25 (Pin 22): LCD D7 (Pin 14) 
+GPIO26 (Pin37): Rotary Encoder A
+GPIO20 (Pin 38): Rotary Encoder B
+GPIO05 (Pin 29): Rotary Encoder Switch
