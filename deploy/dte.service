@@ -1,0 +1,25 @@
+[Unit]
+Description=DTE recorder
+After=local-fs.target systemd-udev-settle.service
+
+[Service]
+Type=simple
+User=dte
+Group=dte
+SupplementaryGroups=gpio video plugdev
+WorkingDirectory=/home/dte/dte-python
+ExecStart=/home/dte/dte-python/.venv/bin/python /home/dte/dte-python/start.py
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=2
+# dvgrab asks for realtime scheduling, a raised priority and locked memory,
+# and silently runs without them if it isn't allowed.
+LimitRTPRIO=99
+LimitNICE=-20
+LimitMEMLOCK=infinity
+# SIGINT lets dvgrab close the file being recorded.
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

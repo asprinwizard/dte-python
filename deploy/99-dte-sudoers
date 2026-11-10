@@ -1,0 +1,5 @@
+# Installed to /etc/sudoers.d/99-dte (mode 0440). Lets the recorder mount USB
+# drives, release them, and reboot after a factory reset.
+dte ALL=(root) NOPASSWD: /usr/bin/mount -t vfat *, /usr/bin/mount -t exfat *
+dte ALL=(root) NOPASSWD: /usr/bin/umount -l /media/dte/usb
+dte ALL=(root) NOPASSWD: /usr/bin/systemctl reboot

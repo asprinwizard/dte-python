@@ -1,0 +1,3 @@
+# Installed to /etc/udev/rules.d/. By default only root can open /dev/fw*;
+# dvgrab needs the camera's node and the local controller node.
+SUBSYSTEM=="firewire", KERNEL=="fw*", GROUP="video", MODE="0660"

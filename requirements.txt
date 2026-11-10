@@ -1,0 +1,4 @@
+# Installed into the venv by deploy/setup.sh. gpiozero, lgpio and RPi.GPIO
+# come from apt (the venv uses --system-site-packages).
+RPLCD>=1.3
+rpi-hardware-pwm
