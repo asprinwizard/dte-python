@@ -34,10 +34,11 @@ class DTERecorder:
     def __init__(self):
         # Initialize paths
         self.base_path = Path().absolute()
-        self.dvgrab_path = str(self.base_path / 'dvgrab')
+        self.dvgrab_path = str(Path.home() / 'dvgrab-dte' / 'dvgrab_status_ready.py')
         self.user_home = Path.home()
         self.config_dir = self.user_home / '.dte'
         self.config_file = self.config_dir / 'config'
+        self.dvgrab_status_file = self.config_dir / 'dvgrab_status.json'
         
         # Create config directory if it doesn't exist
         if not self.config_dir.exists():
@@ -376,9 +377,9 @@ class DTERecorder:
                 self.detect_device()
 
     def detect_device(self):
-        # Run dvgrab with --help to see if any devices are found
+        # Run dvgrab wrapper with --help to see if any devices are found
         try:
-            result = subprocess.run([self.dvgrab_path, '--help'], 
+            result = subprocess.run(['python3', self.dvgrab_path, '--help'], 
                                     stdout=subprocess.PIPE, 
                                     stderr=subprocess.PIPE, 
                                     timeout=2)
@@ -414,8 +415,9 @@ class DTERecorder:
         else:
             filename_prefix = "dte-capture"
         
-        # Prepare dvgrab command
+        # Prepare dvgrab wrapper command
         cmd = [
+            'python3',
             self.dvgrab_path,
             '--buffers', '10',
             '--recordonly',
@@ -424,10 +426,7 @@ class DTERecorder:
             f"{self.videos_path}/{filename_prefix}-"
         ]
         
-        # Open log file for stderr capture
-        log_file = open(self.config_dir / 'dvgrab.log', 'a')
-        
-        # Start dvgrab process
+        # Start dvgrab wrapper process
         self.dvgrab_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -459,19 +458,22 @@ class DTERecorder:
             self.dvgrab_process = None
             self.recording = False
 
-    def parse_dvgrab_output(self, line):
-        # In real implementation, parse JSON output from dvgrab
+    def parse_dvgrab_status(self):
+        # Read and parse dvgrab status from JSON file
         try:
-            data = json.loads(line)
-            if 'status' in data:
-                self.display.updateStatus('REC' if data['status'] == 'REC' else 'STBY')
-                self.recording = data['status'] == 'REC'
-            if 'timecode' in data:
-                self.display.updateCounter(data['timecode'])
-            if 'format' in data:
-                self.display.updateFormat(data['format'])
-        except json.JSONDecodeError:
-            # Handle non-JSON output
+            if self.dvgrab_status_file.exists():
+                with open(self.dvgrab_status_file, 'r') as f:
+                    data = json.load(f)
+                    
+                if 'status' in data:
+                    self.display.updateStatus('REC' if data['status'] == 'REC' else 'STBY')
+                    self.recording = data['status'] == 'REC'
+                if 'timecode' in data:
+                    self.display.updateCounter(data['timecode'])
+                if 'format' in data:
+                    self.display.updateFormat(data['format'])
+        except (json.JSONDecodeError, FileNotFoundError):
+            # Handle JSON errors or missing file
             pass
 
     def capture_loop(self):
@@ -488,12 +490,10 @@ class DTERecorder:
             if not self.dvgrab_process:
                 self.start_dvgrab()
             
-            # Process dvgrab output
+            # Process dvgrab status
             if self.dvgrab_process:
-                # Read stderr line (non-blocking)
-                stderr_line = self.dvgrab_process.stderr.readline().strip()
-                if stderr_line:
-                    self.parse_dvgrab_output(stderr_line)
+                # Read status from JSON file
+                self.parse_dvgrab_status()
                 
                 # Check if process is still running
                 if self.dvgrab_process.poll() is not None:
